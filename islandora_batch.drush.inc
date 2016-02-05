@@ -45,7 +45,10 @@ function islandora_batch_drush_command() {
     ),
     'options' => array(
       'type' => array(
-        'description' => 'Either "directory" or "zip".',
+        'description' => 'Either "directory" or "zip". The zip importer is' .
+        " unstable with large files (~2GB). Consider alternative methods" .
+        " such as unzipping your Zip file and using Islandora Batch's" .
+        "`--directory` option.",
         'required' => TRUE,
       ),
       'target' => array(
@@ -53,8 +56,8 @@ function islandora_batch_drush_command() {
         'required' => TRUE,
       ),
       'content_models' => array(
-        'description' => 'A comma-separated list of content models to assign ' .
-        'to the objects.',
+        'description' => 'Supports one or multiple comma-separated content ' .
+        'models which are all applied to each ingested object.',
         'value' => 'optional',
         // 'required' => FALSE,
       ),
@@ -81,7 +84,21 @@ function islandora_batch_drush_command() {
     ),
     'bootstrap' => DRUSH_BOOTSTRAP_DRUPAL_LOGIN,
   );
-
+  $items['islandora_batch_cleanup_processed_sets'] = array(
+    'aliases' => array('ibcps'),
+    'description' => dt('Cleans up processed sets that have existed greater than a specified time.'),
+    'drupal dependencies' => array('islandora_batch'),
+    'examples' => array(
+      'drush -v -u1 islandora_batch_cleanup_processed_sets --time=1438179447',
+    ),
+    'options' => array(
+      'time' => array(
+        'description' => dt('The amount of time since completion to compare against. The timestamp to be used to query against. Can use date +%s on the command line to get the current time.'),
+        'required' => TRUE,
+      ),
+    ),
+    'bootstrap' => DRUSH_BOOTSTRAP_DRUPAL_LOGIN,
+  );
   return $items;
 }
 
@@ -120,6 +137,7 @@ function drush_islandora_batch_scan_preprocess() {
 
   // Pass the preprocessor off to run.
   $preprocessed = islandora_batch_handle_preprocessor($preprocessor);
+  drush_log(t("SetId: @s", array('@s' => $preprocessor->getSetId())), "ok");
 }
 
 /**
@@ -139,4 +157,51 @@ function drush_islandora_batch_ingest() {
   islandora_batch_set_operations($parameters);
 
   drush_backend_batch_process();
+}
+
+/**
+ * Command callback; clean up processed sets.
+ */
+function drush_islandora_batch_cleanup_processed_sets() {
+  $batch = array(
+    'operations' => array(
+      array(
+        'islandora_batch_cleanup_processed_sets_batch_operation',
+        array(
+          drush_get_option('time', TRUE),
+        ),
+      ),
+    ),
+  );
+  batch_set($batch);
+  drush_backend_batch_process();
+}
+
+/**
+ * Batch operation; clean up processed sets greater than a duration.
+ */
+function islandora_batch_cleanup_processed_sets_batch_operation($time, &$context) {
+  module_load_include('inc', 'islandora_batch', 'includes/db');
+  $sandbox =& $context['sandbox'];
+
+  if (!isset($sandbox['total'])) {
+    $sets_to_cleanup = islandora_batch_get_sets($time);
+    $sandbox['progress'] = 0;
+    $sandbox['total'] = count($sets_to_cleanup);
+    if ($sandbox['total'] == 0) {
+      // Nothing to process.
+      $context['finished'] = 1;
+      $context['message'] = t('No sets to cleanup.');
+      return;
+    }
+    $sandbox['set_stash'] = $sets_to_cleanup;
+  }
+  $set = array_shift($sandbox['set_stash']);
+  islandora_batch_delete_set($set);
+  $sandbox['progress'] = min($sandbox['total'], $sandbox['progress'] + 1);
+  $context['finished'] = $sandbox['progress'] / $sandbox['total'];
+  $context['message'] = t('Cleaned up set @progress of @total.', array(
+    '@progress' => $sandbox['progress'],
+    '@total' => $sandbox['total'],
+  ));
 }
