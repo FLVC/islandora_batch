@@ -42,7 +42,7 @@ function islandora_batch_item_is_owner($id, $user = NULL) {
   }
 
   $q = db_select('islandora_batch_queue', 'q');
-  $a = $q->join('islandora_batch_set', 's', 's.id = q.sid');
+  $q->join('islandora_batch_set', 's', 's.id = q.sid');
 
   $result = $q->fields('q', 'id')
     ->condition('q.id', $id)
@@ -136,5 +136,20 @@ function islandora_batch_remove_file_usages($pid) {
   $files = file_load_multiple($q->fetchCol());
   foreach ($files as $file) {
     file_usage_delete($file, 'islandora_batch', 'islandora_batch_object', $bid);
+    file_delete($file);
+  }
+}
+
+/**
+ * Resets a Drupal timer.
+ *
+ * @param string $name
+ *   Name of the timer to reset.
+ */
+function islandora_batch_timer_reset($name) {
+  global $timers;
+  if (isset($timers[$name])) {
+    unset($timers[$name]);
+    $timers[$name]['time'] = 0;
   }
 }

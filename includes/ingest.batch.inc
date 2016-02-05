@@ -98,13 +98,13 @@ function islandora_batch_get_lock_timeout($timeout) {
  * @param float $timeout
  *   The total amount of time for which we want to process a batch, in seconds.
  *   A negative value indicates that we are to be processing for an undefined
- *   amount of time.
+ *   amount of time. Defaults to -1.0.
  *
  * @return float|bool
  *   The amount of time for which a suitable lock was acquired, in seconds;
  *   otherwise, FALSE.
  */
-function islandora_batch_get_lock($ingest_set, $timeout) {
+function islandora_batch_get_lock($ingest_set, $timeout = -1.0) {
   $lock_timeout = islandora_batch_get_lock_timeout($timeout);
 
   $globally_locked = lock_acquire(ISLANDORA_BATCH_LOCK_NAME, $lock_timeout) ||
@@ -166,6 +166,7 @@ function islandora_batch_get_lock($ingest_set, $timeout) {
  *   The batch context.
  */
 function islandora_batch_ingest_process(array $parameters, &$context) {
+  module_load_include('inc', 'islandora_batch', 'includes/utilities');
   extract($parameters);
 
   if (!isset($ingest_set)) {
@@ -181,12 +182,8 @@ function islandora_batch_ingest_process(array $parameters, &$context) {
     $context['results']['ingest_set'] = $ingest_set;
 
     // Grab a count of the number of items in the set.
-    $count = db_select('islandora_batch_queue', 'q')
-      ->fields('q', array())
-      ->condition('sid', $ingest_set)
-      ->countQuery()
-      ->execute()
-      ->fetchField();
+    module_load_include('inc', 'islandora_batch', 'includes/db');
+    $count = islandora_batch_get_count_of_queued_set_objects($ingest_set);
     $context['sandbox']['set_count'] = intval($count);
   }
 
@@ -232,6 +229,7 @@ function islandora_batch_ingest_process(array $parameters, &$context) {
       $set_states[] = $state = islandora_batch_process_results(islandora_batch_get_parents($ingest_set), $timeout, $lock_timeout, $context);
     }
     timer_stop(ISLANDORA_BATCH_LOCK_TIMER);
+    islandora_batch_timer_reset(ISLANDORA_BATCH_LOCK_TIMER);
   }
 
   // Attempting to process each set (parent/child/parent) returned each an
@@ -402,7 +400,9 @@ function islandora_batch_process_results($results, $timeout, $lock_timeout, &$co
     $ingest_object = unserialize($object['data']);
 
     if ($object['state'] !== ISLANDORA_BATCH_STATE__DONE) {
-      $object['state'] = $ingest_object->batchProcess();
+      // Both a simple state and state with message return are accepted.
+      $process_results = $ingest_object->batchProcess();
+      $object['state'] = is_array($process_results) ? $process_results['state'] : $process_results;
     }
 
     if ($object['state'] === ISLANDORA_BATCH_STATE__DONE) {
@@ -434,20 +434,24 @@ function islandora_batch_process_results($results, $timeout, $lock_timeout, &$co
         $context['message'] = t('Exception occured: Failed to ingest %pid.', array('%pid' => $ingest_object->id));
       }
     }
+    else {
+      $context['message'] = t('%pid not ready for ingest.', array('%pid' => $ingest_object->id));
+    }
 
     // Update the info in the database.
-    db_merge('islandora_batch_queue')
-      ->key(array('id' => $object['id']))
-      ->fields(array(
-        'data' => $object['data'],
-      ))
-      ->execute();
-    db_merge('islandora_batch_state')
-      ->key(array('id' => $object['id']))
-      ->fields(array(
-        'state' => $object['state'],
-      ))
-      ->execute();
+    module_load_include('inc', 'islandora_batch', 'includes/db');
+    islandora_batch_merge_queued_object_data($object['id'], $object['data']);
+    islandora_batch_merge_object_state($object['id'], $object['state']);
+    islandora_batch_merge_object_message(
+      $object['id'],
+      isset($process_results['message']) && $process_results['message'] ?
+        $process_results['message'] :
+        // Just cleaning the HTML out of the context message.
+        strip_tags($context['message'])
+    );
+
+    // Pass hook object and a pass/fail state for the object.
+    module_invoke_all(ISLANDORA_BATCH_OBJECT_PROCESSED_HOOK, $ingest_object, ($object['state'] === ISLANDORA_BATCH_STATE__DONE ? 1 : 0));
 
     $end = timer_read(ISLANDORA_BATCH_TIMER_NAME);
     if (!isset($context['results']['count'])) {
@@ -479,19 +483,40 @@ function islandora_batch_process_results($results, $timeout, $lock_timeout, &$co
  * Batch 'finished' callback.
  */
 function islandora_batch_finished($success, $results, $operations) {
-  $lock_name = islandora_batch_get_lock_name(isset($results['ingest_set']) ? $results['ingest_set'] : NULL);
+  module_load_include('inc', 'islandora_batch', 'includes/db');
+  $successfully_processed_sets = array();
+  $set = isset($results['ingest_set']) ? $results['ingest_set'] : NULL;
+  $process_count = isset($results['count']) ? $results['count'] : 0;
+  if (!$set) {
+    $sets = (array) islandora_batch_get_sets(FALSE);
+  }
+  elseif ($set) {
+    $sets = array($set);
+  }
+
+  $successfully_processed_sets = array_filter($sets, 'islandora_batch_check_if_set_is_fully_ingested');
+  if (!empty($successfully_processed_sets)) {
+    db_update('islandora_batch_set')
+      ->fields(array(
+        'completed' => time(),
+      ))
+      ->condition('id', $successfully_processed_sets)
+      ->execute();
+  }
+
+  $lock_name = islandora_batch_get_lock_name($set);
   lock_release($lock_name);
-  if (module_exists('views')) {
+  if (module_exists('views') && variable_get('islandora_batch_link_when_finished', TRUE)) {
     module_load_include('inc', 'islandora_batch', 'includes/utilities');
-    if (isset($results['ingest_set'])) {
-      if (islandora_batch_set_is_owner($results['ingest_set'])) {
+    if ($set) {
+      if (islandora_batch_set_is_owner($set)) {
         drupal_set_message(filter_xss(t('Processing complete; review the !queue_link for some additional information.', array(
-          '!queue_link' => l(t('queue'), "islandora_batch/reports/queue/{$results['ingest_set']}"),
+          '!queue_link' => l(t('queue'), "islandora_batch/reports/queue/{$set}"),
         ))));
       }
       elseif (user_access(ISLANDORA_BATCH_MANAGE_QUEUE_PERMISSION)) {
         drupal_set_message(filter_xss(t('Processing complete; review the !queue_link for some additional information.', array(
-          '!queue_link' => l(t('queue'), "admin/reports/islandora_batch_queue/{$results['ingest_set']}"),
+          '!queue_link' => l(t('queue'), "admin/reports/islandora_batch_queue/{$set}"),
         ))));
       }
       else {
@@ -516,4 +541,5 @@ function islandora_batch_finished($success, $results, $operations) {
   else {
     drupal_set_message(t('Processing complete!'));
   }
+  module_invoke_all(ISLANDORA_BATCH_PROCESS_FINISHED_HOOK, $successfully_processed_sets);
 }

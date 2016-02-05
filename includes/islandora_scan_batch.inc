@@ -363,8 +363,8 @@ class IslandoraScanBatchObject extends IslandoraBatchObject {
     if (!isset($this['MODS'])) {
       $dir = drupal_get_path('module', 'islandora_batch');
       // TODO: Create the MODS datastream on this object.
-      $mods_datastream = $this->constructDatastream('MODS', 'X');
-      $mods_datastream->mimetype = 'text/xml';
+      $mods_datastream = $this->constructDatastream('MODS', 'M');
+      $mods_datastream->mimetype = 'application/xml';
       $mods_datastream->label = 'MODS Record';
 
       // If we have an XML stream which is:
@@ -379,7 +379,7 @@ class IslandoraScanBatchObject extends IslandoraBatchObject {
             $mods_datastream->setContentFromFile($this->objectInfo['xml']->uri, FALSE);
           }
           // MARCXML, transform to MODS and set.
-          elseif ($s_xml->getName() == 'record') {
+          elseif (in_array($s_xml->getName(), array('collection', 'record'))) {
             $mods_datastream->content = static::runXslTransform(array(
               'input' => $xml,
               'xsl' => $dir . '/transforms/MARC21slim2MODS3-4.xsl',
@@ -467,8 +467,8 @@ EOXML;
     if (!isset($this['DC'])) {
       $ingest_dc = FALSE;
       // TODO: Create the DC datastream on this object.
-      $dc_datastream = $this->constructDatastream('DC', 'X');
-      $dc_datastream->mimetype = 'text/xml';
+      $dc_datastream = $this->constructDatastream('DC', 'M');
+      $dc_datastream->mimetype = 'application/xml';
       $dc_datastream->label = 'DC Record';
 
       if (isset($this->objectInfo['xml'])) {
@@ -520,6 +520,20 @@ EOXML;
 
     $this->relationships->add($uri, $predicate, $collection);
     $this->addContentModelRelationships();
+    $this->inheritXacmlPolicies();
+  }
+
+  /**
+   * Add inheritXacmlFrom relationship.
+   */
+  protected function inheritXacmlPolicies() {
+    if (module_exists('islandora_xacml_editor')) {
+      $collection = $this->preprocessorParameters['parent'];
+      $parent = islandora_object_load($collection);
+      if ($parent) {
+        islandora_xacml_editor_apply_parent_policy($this, $parent);
+      }
+    }
   }
 
   /**
@@ -528,4 +542,5 @@ EOXML;
   protected function addContentModelRelationships() {
     $this->models = $this->preprocessorParameters['content_models'];
   }
+
 }

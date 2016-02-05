@@ -31,11 +31,15 @@ Install as usual, see [this](https://drupal.org/documentation/install/modules-th
 
 N/A
 
+## Documentation
+
+Further documentation for this module is available at [our wiki](https://wiki.duraspace.org/display/ISLANDORA/Islandora+Batch)
+
 ### Usage
 
 The base ZIP/directory preprocessor can be called as a drush script (see `drush help islandora_batch_scan_preprocess` for additional parameters):
 
-`drush -v --user=admin --uri=http://localhost islandora_batch_scan_preprocess --type=zip --target=/path/to/archive.zip`
+`drush -v -u 1 --uri=http://localhost islandora_batch_scan_preprocess --type=zip --target=/path/to/archive.zip`
 
 This will populate the queue (stored in the Drupal database) with base entries.
 
@@ -43,15 +47,15 @@ For the base scan, files are grouped according to their basename (without extens
 
 The queue of preprocessed items can then be processed:
 
-`drush -v --user=admin --uri=http://localhost islandora_batch_ingest`
+`drush -v -u 1 --uri=http://localhost islandora_batch_ingest`
 
 A fuller example, which preprocesses large image objects for inclusion in the collection with PID "yul:F0433", is:
 
-`drush -v --user=admin --uri=http://digital.library.yorku.ca islandora_batch_scan_preprocess --content_models=islandora:sp_large_image_cmodel --parent=yul:F0433 --parent_relationship_pred=isMemberOfCollection --type=directory --target=/tmp/batch_ingest`
+`drush -v -u 1 --uri=http://digital.library.yorku.ca islandora_batch_scan_preprocess --content_models=islandora:sp_large_image_cmodel --parent=yul:F0433 --parent_relationship_pred=isMemberOfCollection --type=directory --target=/tmp/batch_ingest`
 
 then, to ingest the queued objects:
 
-`drush -v --user=admin --uri=http://digital.library.yorku.ca islandora_batch_ingest`
+`drush -v -u 1 --uri=http://digital.library.yorku.ca islandora_batch_ingest`
 
 ### Customization
 
@@ -68,11 +72,11 @@ Having problems or solved a problem? Check out the Islandora google groups for a
 
 Current maintainers:
 
-* [Adam Vessey](https://github.com/adam-vessey)
+* [Jared Whiklo](https://github.com/whikloj)
 
 ## Development
 
-If you would like to contribute to this module, please check out our helpful [Documentation for Developers](https://github.com/Islandora/islandora/wiki#wiki-documentation-for-developers) info, as well as our [Developers](http://islandora.ca/developers) section on the Islandora.ca site.
+If you would like to contribute to this module, please check out [CONTRIBUTING.md](CONTRIBUTING.md). In addition, we have helpful [Documentation for Developers](https://github.com/Islandora/islandora/wiki#wiki-documentation-for-developers) info, as well as our [Developers](http://islandora.ca/developers) section on the [Islandora.ca](http://islandora.ca) site.
 
 ## License
 
