@@ -5,6 +5,7 @@
  * Module for Batch ingests.
  */
 
+define('ISLANDORA_BATCH_STATE__OFFLINE', -2);
 define('ISLANDORA_BATCH_STATE__ERROR', -1);
 define('ISLANDORA_BATCH_STATE__NOT_READY', 0);
 define('ISLANDORA_BATCH_STATE__READY', 1);

@@ -12,6 +12,7 @@ class IslandoraBatchStateFieldHandler extends views_handler_field {
   // XXX: Views code uses underscores... Shrug?
   function add_self_tokens(&$tokens, $item) {
     $map = array(
+      ISLANDORA_BATCH_STATE__OFFLINE => t('Check offline ingest for progress'),
       ISLANDORA_BATCH_STATE__ERROR => t('Error'),
       ISLANDORA_BATCH_STATE__NOT_READY => t('Not ready to ingest'),
       ISLANDORA_BATCH_STATE__READY => t('Ready to ingest'),
