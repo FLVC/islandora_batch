@@ -434,6 +434,9 @@ function islandora_batch_process_results($results, $timeout, $lock_timeout, &$co
         $context['message'] = t('Exception occured: Failed to ingest %pid.', array('%pid' => $ingest_object->id));
       }
     }
+    else if ($object['state'] === ISLANDORA_BATCH_STATE__OFFLINE) {
+      $context['message'] = t('%pid will be loaded via offline ingest.', array('%pid' => $ingest_object->id));
+    }
     else {
       $context['message'] = t('%pid not ready for ingest.', array('%pid' => $ingest_object->id));
     }
